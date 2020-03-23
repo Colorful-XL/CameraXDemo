@@ -1,14 +1,22 @@
 package com.example.cameraxdemo
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Matrix
 import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Message
 import android.util.Log
 import android.util.Size
 import android.view.Surface
 import android.view.ViewGroup
+import android.webkit.WebView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
 import androidx.core.app.ActivityCompat
@@ -23,6 +31,8 @@ private const val REQUEST_CODE_PERMISSIONS = 10
 private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
 
 class MainActivity : AppCompatActivity(), LifecycleOwner {
+    private lateinit var handler : Handler
+
     private val executor = Executors.newSingleThreadExecutor()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,6 +44,19 @@ class MainActivity : AppCompatActivity(), LifecycleOwner {
         }
         viewFinder.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTransform()
+        }
+        handler = @SuppressLint("HandlerLeak")
+        object : Handler(){
+            override fun handleMessage(msg: Message) {
+                super.handleMessage(msg)
+                if (msg.data != null){//success
+                    val intent = Intent(this@MainActivity,WebViewActivity::class.java)
+                    intent.putExtra("url",msg.data)
+                    startActivity(intent)
+                }else{
+
+                }
+            }
         }
     }
 
@@ -91,10 +114,30 @@ class MainActivity : AppCompatActivity(), LifecycleOwner {
             })
         }
 
+        val analysisConfig = ImageAnalysisConfig.Builder().apply {
+            setImageReaderMode(ImageAnalysis.ImageReaderMode.ACQUIRE_LATEST_IMAGE)
+            setTargetRotation(viewFinder.display.rotation)
+            setLensFacing(CameraX.LensFacing.BACK)
+        }.build()
+        val listener = object :UIListener{
+            override fun onSuccess(url : String) {
+                val msg = Message()
+                val bundle = Bundle()
+                bundle.putString("url",url)
+                msg.data = bundle
+                handler.sendMessage(msg)
+            }
 
+            override fun onFailue() {
+            }
+
+        }
+        val analyzerUseCase = ImageAnalysis(analysisConfig).apply {
+            setAnalyzer(executor , QRAnalyzer(listener))
+        }
         //将用例绑定到生命周期
 //         CameraX.bindToLifecycle(this, preview)//只是预览
-        CameraX.bindToLifecycle(this, preview,imageCapture)//可以预览可以拍照
+        CameraX.bindToLifecycle(this, preview,imageCapture,analyzerUseCase)//可以预览可以拍照
     }
 
     private fun updateTransform() {
